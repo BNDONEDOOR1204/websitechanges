@@ -2,14 +2,15 @@ name: Website Monitor
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "0 * * * *"
 
 jobs:
   monitor:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
       - name: Show websites being monitored
         run: |
           echo "Reading monitors.json"
