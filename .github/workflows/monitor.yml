@@ -53,7 +53,6 @@ jobs:
                 content: "No product version changed."
               })
             );
-
             process.exit(0);
           }
 
@@ -86,40 +85,21 @@ jobs:
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
         run: |
-          CHANGED=$(node -p \
-            "require('./monitor-result.json').changed")
+          CHANGED=$(node -p "require('./monitor-result.json').changed")
 
           if [ "$CHANGED" != "true" ]; then
             echo "No version changed."
             exit 0
           fi
 
-          CURL_ARGS=(
-            --fail-with-body
-            -F "payload_json=<discord-payload.json"
-          )
+          curl \
+            --fail-with-body \
+            -H "Content-Type: application/json" \
+            -X POST \
+            -d @discord-payload.json \
+            "$DISCORD_WEBHOOK"
 
-          if [ -f current-haze.png ]; then
-            CURL_ARGS+=(
-              -F "haze=@current-haze.png"
-            )
-          fi
-
-          if [ -f current-overdrive.png ]; then
-            CURL_ARGS+=(
-              -F "overdrive=@current-overdrive.png"
-            )
-          fi
-
-          if [ -f current-spark.png ]; then
-            CURL_ARGS+=(
-              -F "spark=@current-spark.png"
-            )
-          fi
-
-          curl "${CURL_ARGS[@]}" "$DISCORD_WEBHOOK"
-
-            - name: Save status baseline
+      - name: Save status baseline
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -135,11 +115,4 @@ jobs:
             fi
           done
 
-          if git diff --cached --quiet; then
-            echo "No baseline changes to save."
-            exit 0
-          fi
-
-          git pull --rebase origin main
-          git commit -m "Update BOYNEXTDOOR stock baseline" || true
-          git push origin main
+          if git
