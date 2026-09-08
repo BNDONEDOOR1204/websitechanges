@@ -119,14 +119,10 @@ jobs:
 
           curl "${CURL_ARGS[@]}" "$DISCORD_WEBHOOK"
 
-      - name: Save status baseline
+            - name: Save status baseline
         run: |
-          git config \
-            user.name "github-actions[bot]"
-
-          git config \
-            user.email \
-            "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
           git add \
             previous-status.json \
@@ -141,9 +137,9 @@ jobs:
 
           if git diff --cached --quiet; then
             echo "No baseline changes to save."
-          else
-            git commit \
-              -m "Update BOYNEXTDOOR stock baseline"
-
-            git push
+            exit 0
           fi
+
+          git pull --rebase origin main
+          git commit -m "Update BOYNEXTDOOR stock baseline" || true
+          git push origin main
