@@ -104,15 +104,17 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git add \
-            previous-status.json \
-            current-status.json \
-            monitor-result.json
+          git add previous-status.json current-status.json monitor-result.json
 
-          for file in previous-*.png; do
-            if [ -f "$file" ]; then
-              git add "$file"
-            fi
-          done
+          git add previous-*.png || true
 
-          if git
+          if git diff --cached --quiet; then
+            echo "No baseline changes to save."
+            exit 0
+          fi
+
+          git pull --rebase origin main || true
+
+          git commit -m "Update BOYNEXTDOOR stock baseline" || true
+
+          git push origin main || true
