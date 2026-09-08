@@ -11,7 +11,10 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Show websites being monitored
+      - name: Download Website
         run: |
-          echo "Reading monitors.json"
-          cat monitors.json
+          curl -L https://www.google.com > page.html
+
+      - name: Show File Size
+        run: |
+          ls -lh page.html
