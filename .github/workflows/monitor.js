@@ -1,78 +1,92 @@
 const fs = require("fs");
-const crypto = require("crypto");
 const { chromium } = require("playwright");
 
-function hashFile(path) {
-  return crypto
-    .createHash("sha256")
-    .update(fs.readFileSync(path))
-    .digest("hex");
+function safeName(value) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, "-");
 }
 
-(async () => {
-  const monitors = JSON.parse(
-    fs.readFileSync("monitors.json", "utf8")
-  );
+async function findVersionOption(page, version) {
+  const escapedVersion = version.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const exactVersion = new RegExp(`^\\s*${escapedVersion}\\s*$`, "i");
 
-  const monitor = monitors[0];
+  const selectors = [
+    "button",
+    "label",
+    "[role='button']",
+    "[role='radio']",
+    ".swatch-element",
+    ".product-form__input label",
+    ".variant-input label",
+  ];
 
-  const browser = await chromium.launch({
-    headless: true,
-  });
+  for (const selector of selectors) {
+    const matches = page.locator(selector).filter({
+      hasText: exactVersion,
+    });
 
-  const page = await browser.newPage({
-    viewport: {
-      width: 1365,
-      height: 900,
-    },
-    deviceScaleFactor: 1,
-  });
+    const count = await matches.count();
 
-  console.log(`Opening ${monitor.url}`);
+    for (let index = 0; index < count; index += 1) {
+      const candidate = matches.nth(index);
 
-  await page.goto(monitor.url, {
-    waitUntil: "domcontentloaded",
-    timeout: 60000,
-  });
-
-  await page.waitForTimeout(7000);
-
-  /*
-   * Find the product action button.
-   * This matches either SOLD OUT or ADD TO CART.
-   */
-  let actionButton = page
-    .locator("button, [role='button']")
-    .filter({
-      hasText: /SOLD\s*OUT|ADD\s*TO\s*CART|OUT\s*OF\s*STOCK/i,
-    })
-    .first();
-
-  /*
-   * Some shops use an input element instead of a button.
-   */
-  if ((await actionButton.count()) === 0) {
-    actionButton = page
-      .locator(
-        "input[type='submit'][value*='SOLD'], " +
-        "input[type='submit'][value*='ADD TO CART']"
-      )
-      .first();
+      if (await candidate.isVisible().catch(() => false)) {
+        return candidate;
+      }
+    }
   }
 
-  if ((await actionButton.count()) === 0) {
-    throw new Error(
-      "Could not locate the SOLD OUT or ADD TO CART button."
-    );
+  return null;
+}
+
+async function findPurchaseButton(page) {
+  const selectors = [
+    "form[action*='/cart/add'] button[name='add']",
+    "form[action*='/cart/add'] button[type='submit']",
+    "button[name='add']",
+    "button[type='submit']",
+  ];
+
+  for (const selector of selectors) {
+    const matches = page.locator(selector);
+    const count = await matches.count();
+
+    for (let index = 0; index < count; index += 1) {
+      const candidate = matches.nth(index);
+
+      if (await candidate.isVisible().catch(() => false)) {
+        const text = (
+          await candidate.innerText().catch(() => "")
+        )
+          .replace(/\s+/g, " ")
+          .trim();
+
+        if (
+          /ADD\s*TO\s*CART|SOLD\s*OUT|OUT\s*OF\s*STOCK|UNAVAILABLE/i.test(
+            text
+          )
+        ) {
+          return candidate;
+        }
+      }
+    }
   }
 
-  await actionButton.scrollIntoViewIfNeeded();
+  return null;
+}
 
-  /*
-   * Start at the button and move upwards until an area containing
-   * product options, quantity, and the stock button is found.
-   */
-  const areaHandle = await actionButton.evaluateHandle((button) => {
+async function getProductArea(page, purchaseButton) {
+  const productForm = page.locator(
+    "form[action*='/cart/add']"
+  ).first();
+
+  if (
+    (await productForm.count()) > 0 &&
+    (await productForm.isVisible().catch(() => false))
+  ) {
+    return productForm;
+  }
+
+  const handle = await purchaseButton.evaluateHandle((button) => {
     let element = button;
 
     while (element && element !== document.body) {
@@ -80,18 +94,14 @@ function hashFile(path) {
         .replace(/\s+/g, " ")
         .toUpperCase();
 
-      const hasStockText =
-        text.includes("SOLD OUT") ||
+      const hasOptions = text.includes("OPTIONS");
+      const hasQuantity = text.includes("QUANTITY");
+      const hasPurchaseText =
         text.includes("ADD TO CART") ||
+        text.includes("SOLD OUT") ||
         text.includes("OUT OF STOCK");
 
-      const hasOptions =
-        text.includes("OPTIONS") ||
-        text.includes("OPTION");
-
-      const hasQuantity = text.includes("QUANTITY");
-
-      if (hasStockText && (hasOptions || hasQuantity)) {
+      if (hasPurchaseText && (hasOptions || hasQuantity)) {
         return element;
       }
 
@@ -101,68 +111,164 @@ function hashFile(path) {
     return button.parentElement;
   });
 
-  const productArea = areaHandle.asElement();
+  return handle.asElement();
+}
 
-  if (!productArea) {
-    throw new Error("Could not identify the product monitoring area.");
-  }
+(async () => {
+  const [monitor] = JSON.parse(
+    fs.readFileSync("monitors.json", "utf8")
+  );
 
-  /*
-   * Capture only the selected product area.
-   */
-  await productArea.screenshot({
-    path: "current-area.png",
+  const previousResults = fs.existsSync("previous-status.json")
+    ? JSON.parse(
+        fs.readFileSync("previous-status.json", "utf8")
+      )
+    : {};
+
+  const browser = await chromium.launch({
+    headless: true,
   });
 
-  const areaText = await productArea.innerText();
+  const page = await browser.newPage({
+    viewport: {
+      width: 1365,
+      height: 1000,
+    },
+    deviceScaleFactor: 1,
+  });
 
-  const normalizedText = areaText
-    .replace(/\s+/g, " ")
-    .trim();
+  console.log(`Opening ${monitor.url}`);
 
-  console.log("Current monitored text:");
-  console.log(normalizedText);
+  await page.goto(monitor.url, {
+    waitUntil: "domcontentloaded",
+    timeout: 90000,
+  });
 
-  const currentStatus = /ADD\s*TO\s*CART/i.test(normalizedText)
-    ? "ADD TO CART"
-    : /SOLD\s*OUT|OUT\s*OF\s*STOCK/i.test(normalizedText)
-    ? "SOLD OUT"
-    : "OTHER";
+  await page.waitForTimeout(7000);
 
-  const baselineExists = fs.existsSync("previous-area.png");
+  const currentResults = {};
+  const changedVersions = [];
 
-  let changed = false;
-  let previousHash = null;
-  const currentHash = hashFile("current-area.png");
+  for (const version of monitor.versions) {
+    console.log(`Checking version: ${version}`);
 
-  if (baselineExists) {
-    previousHash = hashFile("previous-area.png");
-    changed = previousHash !== currentHash;
-  }
-
-  let previousText = "";
-
-  if (fs.existsSync("previous-area.txt")) {
-    previousText = fs.readFileSync(
-      "previous-area.txt",
-      "utf8"
+    const versionOption = await findVersionOption(
+      page,
+      version
     );
+
+    if (!versionOption) {
+      currentResults[version] = {
+        status: "VERSION OPTION NOT FOUND",
+        buttonText: "",
+        disabled: null,
+      };
+
+      console.log(`${version}: version option not found`);
+      continue;
+    }
+
+    await versionOption.scrollIntoViewIfNeeded();
+
+    await versionOption.click({
+      force: true,
+    });
+
+    await page.waitForTimeout(2500);
+
+    const purchaseButton = await findPurchaseButton(page);
+
+    if (!purchaseButton) {
+      currentResults[version] = {
+        status: "PURCHASE BUTTON NOT FOUND",
+        buttonText: "",
+        disabled: null,
+      };
+
+      console.log(`${version}: purchase button not found`);
+      continue;
+    }
+
+    const buttonText = (
+      await purchaseButton.innerText().catch(() => "")
+    )
+      .replace(/\s+/g, " ")
+      .trim();
+
+    const disabled =
+      (await purchaseButton.isDisabled().catch(() => false)) ||
+      (await purchaseButton.getAttribute("aria-disabled")) ===
+        "true";
+
+    let status = "OTHER";
+
+    if (/ADD\s*TO\s*CART/i.test(buttonText) && !disabled) {
+      status = "ADD TO CART";
+    } else if (
+      /SOLD\s*OUT|OUT\s*OF\s*STOCK|UNAVAILABLE/i.test(
+        buttonText
+      ) ||
+      disabled
+    ) {
+      status = "SOLD OUT";
+    }
+
+    currentResults[version] = {
+      status,
+      buttonText,
+      disabled,
+    };
+
+    console.log(
+      `${version}: ${status} | Button: ${buttonText}`
+    );
+
+    const productArea = await getProductArea(
+      page,
+      purchaseButton
+    );
+
+    const screenshotName =
+      `current-${safeName(version)}.png`;
+
+    if (productArea) {
+      await productArea.screenshot({
+        path: screenshotName,
+      });
+    } else {
+      await purchaseButton.screenshot({
+        path: screenshotName,
+      });
+    }
+
+    const previous = previousResults[version];
+
+    if (
+      previous &&
+      (
+        previous.status !== status ||
+        previous.buttonText !== buttonText ||
+        previous.disabled !== disabled
+      )
+    ) {
+      changedVersions.push({
+        version,
+        previousStatus: previous.status,
+        currentStatus: status,
+        previousButtonText: previous.buttonText,
+        currentButtonText: buttonText,
+        screenshot: screenshotName,
+      });
+    }
   }
 
-  const textChanged =
-    baselineExists &&
-    previousText.trim() !== normalizedText.trim();
+  const baselineExists =
+    Object.keys(previousResults).length > 0;
 
-  /*
-   * Alert if either the screenshot or visible text changed.
-   */
-  const areaChanged =
-    baselineExists && (changed || textChanged);
-
-  console.log(`Baseline exists: ${baselineExists}`);
-  console.log(`Screenshot changed: ${changed}`);
-  console.log(`Text changed: ${textChanged}`);
-  console.log(`Current status: ${currentStatus}`);
+  fs.writeFileSync(
+    "current-status.json",
+    JSON.stringify(currentResults, null, 2)
+  );
 
   fs.writeFileSync(
     "monitor-result.json",
@@ -171,12 +277,9 @@ function hashFile(path) {
         name: monitor.name,
         url: monitor.url,
         baselineExists,
-        areaChanged,
-        screenshotChanged: changed,
-        textChanged,
-        previousText,
-        currentText: normalizedText,
-        currentStatus,
+        changed: changedVersions.length > 0,
+        changedVersions,
+        currentResults,
         checkedAt: new Date().toISOString(),
       },
       null,
@@ -184,12 +287,23 @@ function hashFile(path) {
     )
   );
 
-  /*
-   * Save the current screenshot and text as the next baseline.
-   */
-  fs.copyFileSync(
-    "current-area.png",
-    "previous-area.png"
+  fs.writeFileSync(
+    "previous-status.json",
+    JSON.stringify(currentResults, null, 2)
   );
 
-  
+  for (const version of monitor.versions) {
+    const name = safeName(version);
+    const currentImage = `current-${name}.png`;
+    const previousImage = `previous-${name}.png`;
+
+    if (fs.existsSync(currentImage)) {
+      fs.copyFileSync(currentImage, previousImage);
+    }
+  }
+
+  await browser.close();
+})().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});

@@ -1,4 +1,4 @@
-name: Product Area Monitor
+name: BOYNEXTDOOR Stock Monitor
 
 on:
   workflow_dispatch:
@@ -10,7 +10,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: product-area-monitor
+  group: boynextdoor-stock-monitor
   cancel-in-progress: false
 
 jobs:
@@ -32,50 +32,94 @@ jobs:
           npm install playwright
           npx playwright install --with-deps chromium
 
-      - name: Check selected product area
+      - name: Check all three versions
         run: node monitor.js
 
-      - name: Show monitoring result
+      - name: Show results
         run: |
           cat monitor-result.json
 
-      - name: Send Discord alert when area changes
+      - name: Prepare Discord alert
+        run: |
+          node <<'NODE'
+          const fs = require("fs");
+
+          const result = require("./monitor-result.json");
+
+          if (!result.changed) {
+            fs.writeFileSync(
+              "discord-payload.json",
+              JSON.stringify({
+                content: "No product version changed."
+              })
+            );
+
+            process.exit(0);
+          }
+
+          const details = result.changedVersions
+            .map((change) => {
+              return (
+                "**" + change.version + "**\n" +
+                "Previous: " + change.previousStatus + "\n" +
+                "Current: " + change.currentStatus
+              );
+            })
+            .join("\n\n");
+
+          const message =
+            "🚨 **BOYNEXTDOOR STOCK CHANGED**\n\n" +
+            details +
+            "\n\n" +
+            result.url;
+
+          fs.writeFileSync(
+            "discord-payload.json",
+            JSON.stringify({
+              content: message
+            })
+          );
+          NODE
+
+      - name: Send Discord alert
+        if: ${{ hashFiles('monitor-result.json') != '' }}
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
         run: |
-          AREA_CHANGED=$(node -p \
-            "require('./monitor-result.json').areaChanged")
+          CHANGED=$(node -p \
+            "require('./monitor-result.json').changed")
 
-          if [ "$AREA_CHANGED" = "true" ]; then
-
-            MESSAGE=$(node -e "
-              const result =
-                require('./monitor-result.json');
-
-              console.log(
-                '🚨 PRODUCT AREA CHANGED\n\n' +
-                result.name + '\n\n' +
-                'Current status: ' +
-                result.currentStatus + '\n\n' +
-                'Current content:\n' +
-                result.currentText + '\n\n' +
-                result.url
-              );
-            ")
-
-            curl --fail-with-body \
-              -F "payload_json={\"content\":$(node -p \
-                'JSON.stringify(process.argv[1])' \
-                "$MESSAGE")}" \
-              -F "file=@current-area.png" \
-              "$DISCORD_WEBHOOK"
-
-          else
-            echo \
-              "No change detected or first baseline created."
+          if [ "$CHANGED" != "true" ]; then
+            echo "No version changed."
+            exit 0
           fi
 
-      - name: Save new baseline
+          CURL_ARGS=(
+            --fail-with-body
+            -F "payload_json=<discord-payload.json"
+          )
+
+          if [ -f current-haze.png ]; then
+            CURL_ARGS+=(
+              -F "haze=@current-haze.png"
+            )
+          fi
+
+          if [ -f current-overdrive.png ]; then
+            CURL_ARGS+=(
+              -F "overdrive=@current-overdrive.png"
+            )
+          fi
+
+          if [ -f current-spark.png ]; then
+            CURL_ARGS+=(
+              -F "spark=@current-spark.png"
+            )
+          fi
+
+          curl "${CURL_ARGS[@]}" "$DISCORD_WEBHOOK"
+
+      - name: Save status baseline
         run: |
           git config \
             user.name "github-actions[bot]"
@@ -85,15 +129,21 @@ jobs:
             "41898282+github-actions[bot]@users.noreply.github.com"
 
           git add \
-            previous-area.png \
-            previous-area.txt \
+            previous-status.json \
+            current-status.json \
             monitor-result.json
 
+          for file in previous-*.png; do
+            if [ -f "$file" ]; then
+              git add "$file"
+            fi
+          done
+
           if git diff --cached --quiet; then
-            echo "No baseline update needed."
+            echo "No baseline changes to save."
           else
             git commit \
-              -m "Update product area baseline"
+              -m "Update BOYNEXTDOOR stock baseline"
 
             git push
           fi
