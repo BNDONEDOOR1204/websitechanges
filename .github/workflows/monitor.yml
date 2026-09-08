@@ -1,17 +1,99 @@
-name: Website Monitor
+name: Product Area Monitor
 
 on:
   workflow_dispatch:
 
+  schedule:
+    - cron: "*/30 * * * *"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: product-area-monitor
+  cancel-in-progress: false
+
 jobs:
-  notify:
+  monitor:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
-      - name: Send Discord Test
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+
+      - name: Install Playwright
         run: |
-          curl \
-          -H "Content-Type: application/json" \
-          -X POST \
-          -d '{"content":"✅ Watchwise test notification is working!"}' \
-          "${{ secrets.DISCORD_WEBHOOK }}"
+          npm install playwright
+          npx playwright install --with-deps chromium
+
+      - name: Check selected product area
+        run: node monitor.js
+
+      - name: Show monitoring result
+        run: |
+          cat monitor-result.json
+
+      - name: Send Discord alert when area changes
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+        run: |
+          AREA_CHANGED=$(node -p \
+            "require('./monitor-result.json').areaChanged")
+
+          if [ "$AREA_CHANGED" = "true" ]; then
+
+            MESSAGE=$(node -e "
+              const result =
+                require('./monitor-result.json');
+
+              console.log(
+                '🚨 PRODUCT AREA CHANGED\n\n' +
+                result.name + '\n\n' +
+                'Current status: ' +
+                result.currentStatus + '\n\n' +
+                'Current content:\n' +
+                result.currentText + '\n\n' +
+                result.url
+              );
+            ")
+
+            curl --fail-with-body \
+              -F "payload_json={\"content\":$(node -p \
+                'JSON.stringify(process.argv[1])' \
+                "$MESSAGE")}" \
+              -F "file=@current-area.png" \
+              "$DISCORD_WEBHOOK"
+
+          else
+            echo \
+              "No change detected or first baseline created."
+          fi
+
+      - name: Save new baseline
+        run: |
+          git config \
+            user.name "github-actions[bot]"
+
+          git config \
+            user.email \
+            "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add \
+            previous-area.png \
+            previous-area.txt \
+            monitor-result.json
+
+          if git diff --cached --quiet; then
+            echo "No baseline update needed."
+          else
+            git commit \
+              -m "Update product area baseline"
+
+            git push
+          fi
