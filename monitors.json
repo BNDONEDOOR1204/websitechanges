@@ -1,11 +1,22 @@
 [
   {
-    "name": "BOYNEXTDOOR HOME DELUXE Signed",
+    "id": "kpopnara-home-deluxe",
+    "name": "BOYNEXTDOOR HOME DELUXE Signed - Kpop Nara",
+    "store": "kpopnara",
     "url": "https://shop.kpopnara.com/collections/signed/products/pre-order-boynextdoor-1st-studio-album-repackage-home-deluxe-signed",
     "versions": [
       "HAZE",
       "OVERDRIVE",
       "SPARK"
+    ]
+  },
+  {
+    "id": "hello82-home-deluxe",
+    "name": "BOYNEXTDOOR HOME DELUXE Signed - Hello82",
+    "store": "hello82",
+    "url": "https://hello82.com/products/signed-boynextdoor-home-deluxe?_pos=10&_sid=2b4efbb6b&_ss=r",
+    "versions": [
+      "HAZE"
     ]
   }
 ]
