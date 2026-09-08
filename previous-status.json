@@ -1,0 +1,17 @@
+{
+  "HAZE": {
+    "status": "SOLD OUT",
+    "buttonText": "SOLD OUT LOADING...",
+    "disabled": true
+  },
+  "OVERDRIVE": {
+    "status": "SOLD OUT",
+    "buttonText": "SOLD OUT LOADING...",
+    "disabled": true
+  },
+  "SPARK": {
+    "status": "SOLD OUT",
+    "buttonText": "SOLD OUT LOADING...",
+    "disabled": true
+  }
+}
