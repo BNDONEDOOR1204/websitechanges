@@ -1,0 +1,15 @@
+name: Website Monitor
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 * * * *"
+
+jobs:
+  monitor:
+    ru*s-on: ubuntu-latest
+
+    steps:
+  *   - name: Test Run
+        run: |*          echo "Website monitor is*running"
+          cat monitors.js*n
