@@ -2,6 +2,8 @@ name: Website Monitor
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: "0 * * * *"
 
 jobs:
   monitor:
@@ -13,8 +15,10 @@ jobs:
 
       - name: Download Website
         run: |
-          curl -L https://www.google.com > page.html
+          URL=$(grep -o 'https://[^"]*' monitors.json | head -1)
 
-      - name: Show File Size
-        run: |
-          ls -lh page.html
+          echo "Monitoring: $URL"
+
+          curl -L "$URL" > latest.html
+
+          wc -c latest
