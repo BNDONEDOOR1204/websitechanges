@@ -2,8 +2,6 @@ name: Website Monitor
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "0 * * * *"
 
 jobs:
   monitor:
@@ -19,6 +17,9 @@ jobs:
 
           echo "Monitoring: $URL"
 
-          curl -L "$URL" > latest.html
+          curl -L "$URL" -o latest.html
 
-          wc -c latest
+      - name: Show File Details
+        run: |
+          ls -lh latest.html
+          wc -c latest.html
