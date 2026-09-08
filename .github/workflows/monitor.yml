@@ -4,22 +4,14 @@ on:
   workflow_dispatch:
 
 jobs:
-  monitor:
+  notify:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Download Website
+      - name: Send Discord Test
         run: |
-          URL=$(grep -o 'https://[^"]*' monitors.json | head -1)
-
-          echo "Monitoring: $URL"
-
-          curl -L "$URL" -o latest.html
-
-      - name: Show File Details
-        run: |
-          ls -lh latest.html
-          wc -c latest.html
+          curl \
+          -H "Content-Type: application/json" \
+          -X POST \
+          -d '{"content":"✅ Watchwise test notification is working!"}' \
+          "${{ secrets.DISCORD_WEBHOOK }}"
