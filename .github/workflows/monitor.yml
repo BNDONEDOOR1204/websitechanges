@@ -2,11 +2,15 @@ name: Website Monitor
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: "0 * * * *"
 
 jobs:
-  test:
+  monitor:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Test Run
-        run: echo "Watchwise is working!"
+      - name: Show websites being monitored
+        run: |
+          echo "Reading monitors.json"
+          cat monitors.json
