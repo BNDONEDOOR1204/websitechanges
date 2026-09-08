@@ -1,8 +1,8 @@
 {
   "name": "BOYNEXTDOOR HOME DELUXE Signed",
   "url": "https://shop.kpopnara.com/collections/signed/products/pre-order-boynextdoor-1st-studio-album-repackage-home-deluxe-signed",
-  "baselineExists": false,
-  "changed": false,
+  "baselineExists": true,
+  "changed": true,
   "changedVersions": [],
   "currentResults": {
     "HAZE": {
@@ -21,5 +21,5 @@
       "disabled": true
     }
   },
-  "checkedAt": "2026-09-08T03:28:57.330Z"
+  "checkedAt": "2026-09-08T03:42:38.375Z"
 }
