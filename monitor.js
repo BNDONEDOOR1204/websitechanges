@@ -277,7 +277,7 @@ async function getProductArea(page, purchaseButton) {
         name: monitor.name,
         url: monitor.url,
         baselineExists,
-        changed: changedVersions.length > 0,
+        changed: true,
         changedVersions,
         currentResults,
         checkedAt: new Date().toISOString(),
