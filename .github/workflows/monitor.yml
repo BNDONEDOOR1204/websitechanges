@@ -2,7 +2,6 @@ name: BOYNEXTDOOR Stock Monitor
 
 on:
   workflow_dispatch:
-
   schedule:
     - cron: "*/30 * * * *"
 
@@ -20,32 +19,30 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
 
       - name: Set up Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v4
         with:
-          node-version: "24"
+          node-version: "22"
+
+      - name: Install dependencies
+        run: npm ci || npm install
 
       - name: Install Playwright
-        run: |
-          npm install playwright
-          npx playwright install --with-deps chromium
+        run: npx playwright install --with-deps chromium
 
       - name: Check all three versions
         run: node monitor.js
 
       - name: Show results
-        run: |
-          cat monitor-result.json
+        run: cat monitor-result.json
 
       - name: Prepare Discord alert
         run: |
           node <<'NODE'
           const fs = require("fs");
-
           const result = require("./monitor-result.json");
-
           if (!result.changed) {
             fs.writeFileSync(
               "discord-payload.json",
@@ -55,7 +52,6 @@ jobs:
             );
             process.exit(0);
           }
-
           const details = result.changedVersions
             .map((change) => {
               return (
@@ -65,13 +61,11 @@ jobs:
               );
             })
             .join("\n\n");
-
           const message =
             "🚨 **BOYNEXTDOOR STOCK CHANGED**\n\n" +
             details +
             "\n\n" +
             result.url;
-
           fs.writeFileSync(
             "discord-payload.json",
             JSON.stringify({
@@ -86,12 +80,10 @@ jobs:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
         run: |
           CHANGED=$(node -p "require('./monitor-result.json').changed")
-
           if [ "$CHANGED" != "true" ]; then
             echo "No version changed."
             exit 0
           fi
-
           curl \
             --fail-with-body \
             -H "Content-Type: application/json" \
@@ -103,18 +95,12 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
           git add previous-status.json current-status.json monitor-result.json
-
           git add previous-*.png || true
-
           if git diff --cached --quiet; then
             echo "No baseline changes to save."
             exit 0
           fi
-
           git pull --rebase origin main || true
-
           git commit -m "Update BOYNEXTDOOR stock baseline" || true
-
           git push origin main || true
